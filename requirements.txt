@@ -4,3 +4,4 @@ pymysql
 python-dotenv
 matplotlib
 japanize-matplotlib
+seaborn
