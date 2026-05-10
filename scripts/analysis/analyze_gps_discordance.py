@@ -63,16 +63,52 @@ print(df.columns)
 
 
 # =========================
-# 使用特徴量
+# 群名を日本語化
 # =========================
 
-FEATURE_COLUMNS = [
-    "home_stay_ratio",
-    "away_from_home_ratio",
-    "total_distance_km_per_day",
-    "radius_of_gyration_km",
-    "unique_location_bins_per_day",
-]
+GROUP_NAME_MAP = {
+    "isolated_lonely": "孤立・孤独",
+    "isolated_not_lonely": "孤立・非孤独",
+    "not_isolated_lonely": "非孤立・孤独",
+    "not_isolated_not_lonely": "非孤立・非孤独",
+}
+
+df["discordance_type_jp"] = (
+    df["discordance_type"]
+    .map(GROUP_NAME_MAP)
+)
+
+# =========================
+# 群ごとのN数を付けたラベルを作成
+# =========================
+
+group_counts = (
+    df["discordance_type_jp"]
+    .value_counts()
+    .to_dict()
+)
+
+df["discordance_type_jp_with_n"] = (
+    df["discordance_type_jp"]
+    .apply(lambda x: f"{x}\n(n={group_counts.get(x, 0)})")
+)
+
+# =========================
+# 特徴量名を日本語化
+# =========================
+
+FEATURE_NAME_MAP = {
+    "home_stay_ratio": "自宅滞在割合",
+    "away_from_home_ratio": "外出割合",
+    "total_distance_km_per_day": "1日あたり移動距離(km)",
+    "radius_of_gyration_km": "行動範囲半径(km)",
+    "unique_location_bins_per_day": "1日あたり訪問場所数",
+}
+
+
+FEATURE_COLUMNS = list(
+    FEATURE_NAME_MAP.keys()
+)
 
 
 # =========================
@@ -80,14 +116,13 @@ FEATURE_COLUMNS = [
 # =========================
 
 group_mean_df = (
-    df.groupby("discordance_type")[
+    df.groupby("discordance_type_jp")[
         FEATURE_COLUMNS
     ]
     .mean()
 )
 
 print(group_mean_df)
-
 
 # =========================
 # plot
@@ -99,20 +134,34 @@ for feature in FEATURE_COLUMNS:
 
     sns.boxplot(
         data=df,
-        x="discordance_type",
+        x="discordance_type_jp_with_n",
         y=feature
     )
 
     plt.title(
-        f"{feature} の群比較"
+        f"{FEATURE_NAME_MAP[feature]} の群比較",
+        fontsize=16
     )
 
-    plt.xticks(rotation=15)
+    plt.xlabel(
+        "群",
+        fontsize=13
+    )
+
+    plt.ylabel(
+        FEATURE_NAME_MAP[feature],
+        fontsize=13
+    )
+
+    plt.xticks(
+        rotation=0,
+        fontsize=10
+    )
 
     plt.tight_layout()
 
     output_path = (
-        f"{OUTPUT_DIR}/{feature}_boxplot.png"
+        f"{OUTPUT_DIR}/{feature}_boxplot_jp.png"
     )
 
     plt.savefig(
