@@ -1,18 +1,20 @@
-# scripts/create_label_master.py
+from src.infrastructure.storage import (
+    LabelMasterRepository,
+    ParticipantMappingRepository,
+    QuestionnaireMasterRepository,
+)
 
-import pandas as pd
+questionnaire_repo = QuestionnaireMasterRepository()
+mapping_repo = ParticipantMappingRepository()
+label_repo = LabelMasterRepository()
 
-QUESTIONNAIRE_PATH = "data/questionnaire/processed/questionnaire_master.csv"
-MAPPING_PATH = "data/metadata/participant_mapping.csv"
-OUTPUT_PATH = "data/questionnaire/processed/label_master.csv"
-
-questionnaire_df = pd.read_csv(QUESTIONNAIRE_PATH)
-mapping_df = pd.read_csv(MAPPING_PATH)
+questionnaire_df = questionnaire_repo.load()
+mapping_df = mapping_repo.load()
 
 label_df = questionnaire_df.merge(
     mapping_df,
     on="participant_id",
-    how="inner"
+    how="inner",
 )
 
 required_cols = [
@@ -27,7 +29,7 @@ required_cols = [
 
 label_df = label_df.dropna(subset=required_cols)
 
-label_df.to_csv(OUTPUT_PATH, index=False)
+label_repo.save(label_df)
 
 print(label_df)
-print(f"Saved to: {OUTPUT_PATH}")
+print(f"Saved to: {label_repo.path}")

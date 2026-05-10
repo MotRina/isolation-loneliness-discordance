@@ -1,11 +1,17 @@
 import pandas as pd
 
 from src.domain.scoring import gad7_level_to_numeric
+from src.infrastructure.storage import (
+    ParticipantMappingRepository,
+    PsychologyMasterRepository,
+    QuestionnaireRawRepository,
+)
 
-CSV_PATH = "data/questionnaire/raw/questionnaire.csv"
-OUTPUT_PATH = "data/questionnaire/processed/psychology_master.csv"
+raw_repo = QuestionnaireRawRepository()
+mapping_repo = ParticipantMappingRepository()
+master_repo = PsychologyMasterRepository()
 
-df = pd.read_csv(CSV_PATH, header=1)
+df = raw_repo.load()
 
 # 不要行除去
 df = df[df["研究用ID"].notna()]
@@ -149,9 +155,7 @@ psychology_df = pd.concat(
 # device_id を付与
 # =========================
 
-mapping_df = pd.read_csv(
-    "data/metadata/participant_mapping.csv"
-)
+mapping_df = mapping_repo.load()
 
 psychology_df = psychology_df.merge(
     mapping_df,
@@ -180,10 +184,7 @@ psychology_df["gad7_level_num"] = (
     .map(gad7_level_to_numeric)
 )
 
-psychology_df.to_csv(
-    OUTPUT_PATH,
-    index=False
-)
+master_repo.save(psychology_df)
 
 print(psychology_df)
-print(f"Saved to: {OUTPUT_PATH}")
+print(f"Saved to: {master_repo.path}")

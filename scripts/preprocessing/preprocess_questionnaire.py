@@ -6,11 +6,15 @@ from src.domain.scoring import (
     is_friend_isolated,
     is_isolated,
 )
+from src.infrastructure.storage import (
+    QuestionnaireMasterRepository,
+    QuestionnaireRawRepository,
+)
 
-CSV_PATH = "data/questionnaire/raw/questionnaire.csv"
-OUTPUT_PATH = "data/questionnaire/processed/questionnaire_master.csv"
+raw_repo = QuestionnaireRawRepository()
+master_repo = QuestionnaireMasterRepository()
 
-df = pd.read_csv(CSV_PATH, header=1)
+df = raw_repo.load()
 
 df = df[df["研究用ID"].notna()]
 df = df[df["研究用ID"] != "テスト"]
@@ -68,7 +72,7 @@ questionnaire_df["discordance_type"] = questionnaire_df.apply(
     axis=1,
 )
 
-questionnaire_df.to_csv(OUTPUT_PATH, index=False)
+master_repo.save(questionnaire_df)
 
 print(questionnaire_df)
-print(f"Saved to: {OUTPUT_PATH}")
+print(f"Saved to: {master_repo.path}")
