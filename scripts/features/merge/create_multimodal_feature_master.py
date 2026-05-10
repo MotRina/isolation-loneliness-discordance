@@ -13,7 +13,7 @@ OUTPUT_PATH = "data/analysis/multimodal_feature_master.csv"
 
 
 OPTIONAL_FEATURE_FILES = {
-    "bluetooth": "data/sensing/processed/phase_bluetooth_features.csv",
+    "bluetooth": "data/sensing/processed/phase_bluetooth_social_features.csv",
     "screen": "data/sensing/processed/phase_screen_features.csv",
     "activity": "data/sensing/processed/phase_activity_features.csv",
     "network": "data/sensing/processed/phase_network_features.csv",
@@ -66,6 +66,15 @@ def main():
 
         if feature_df is None:
             continue
+
+        feature_df["phase"] = feature_df["phase"].replace({
+            "pre_to_during": "pre",
+            "during_to_post": "post",
+        })
+
+        feature_df = feature_df[
+            feature_df["phase"] != "full_experiment"
+        ]
 
         master_df = master_df.merge(
             feature_df,
