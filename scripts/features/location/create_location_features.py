@@ -1,53 +1,24 @@
-# scripts/create_location_features.py
-
 import json
-from pathlib import Path
 
 import pandas as pd
 
-from src.infrastructure.database.connection import create_db_engine
-
-
-MAPPING_PATH = "data/metadata/participant_mapping.csv"
-OUTPUT_PATH = "data/sensing/processed/location_features.csv"
+from src.infrastructure.database import LocationRepository
+from src.infrastructure.storage import (
+    LocationFeaturesRepository,
+    ParticipantMappingRepository,
+)
 
 
 def parse_location_json(data: str) -> dict:
-    """
-    AWARE DB の locations.data(JSON文字列) を辞書に変換する。
-    """
+    """AWARE DB の locations.data(JSON文字列) を辞書に変換する。"""
     try:
         return json.loads(data)
     except Exception:
         return {}
 
 
-def fetch_location_logs(engine, device_id: str) -> pd.DataFrame:
-    """
-    指定した device_id の location ログをDBから取得する。
-    """
-    query = """
-    SELECT
-        _id,
-        timestamp,
-        device_id,
-        data
-    FROM locations
-    WHERE device_id = %(device_id)s
-    """
-
-    return pd.read_sql(
-        query,
-        engine,
-        params={"device_id": device_id}
-    )
-
-
 def create_location_features(location_df: pd.DataFrame) -> dict:
-    """
-    locationログから参加者単位の基本特徴量を作成する。
-    """
-
+    """locationログから参加者単位の基本特徴量を作成する。"""
     if location_df.empty:
         return {
             "location_count": 0,
@@ -68,12 +39,10 @@ def create_location_features(location_df: pd.DataFrame) -> dict:
     parsed_df["timestamp"] = pd.to_datetime(
         parsed_df["timestamp"],
         unit="ms",
-        errors="coerce"
+        errors="coerce",
     )
 
-    parsed_df = parsed_df.dropna(
-        subset=["timestamp", "latitude", "longitude"]
-    )
+    parsed_df = parsed_df.dropna(subset=["timestamp", "latitude", "longitude"])
 
     if parsed_df.empty:
         return {
@@ -85,7 +54,6 @@ def create_location_features(location_df: pd.DataFrame) -> dict:
 
     parsed_df["date"] = parsed_df["timestamp"].dt.date
 
-    # ざっくりした場所の種類数
     # 小数第3位は約100m程度の粒度
     parsed_df["location_bin"] = (
         parsed_df["latitude"].round(3).astype(str)
@@ -102,14 +70,12 @@ def create_location_features(location_df: pd.DataFrame) -> dict:
 
 
 def main():
-    engine = create_db_engine()
+    location_repo = LocationRepository()
+    mapping_repo = ParticipantMappingRepository()
+    features_repo = LocationFeaturesRepository()
 
-    mapping_df = pd.read_csv(MAPPING_PATH)
-
-    # テスト用ユーザーは分析対象から除外
-    mapping_df = mapping_df[
-        mapping_df["participant_id"] != "ojus"
-    ]
+    mapping_df = mapping_repo.load()
+    mapping_df = mapping_df[mapping_df["participant_id"] != "ojus"]
 
     feature_rows = []
 
@@ -119,11 +85,7 @@ def main():
 
         print(f"Processing {participant_id}...")
 
-        location_df = fetch_location_logs(
-            engine=engine,
-            device_id=device_id
-        )
-
+        location_df = location_repo.fetch_by_device(device_id)
         features = create_location_features(location_df)
 
         feature_rows.append({
@@ -134,18 +96,10 @@ def main():
 
     feature_df = pd.DataFrame(feature_rows)
 
-    Path(OUTPUT_PATH).parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    feature_df.to_csv(
-        OUTPUT_PATH,
-        index=False
-    )
+    features_repo.save(feature_df)
 
     print(feature_df)
-    print(f"Saved to: {OUTPUT_PATH}")
+    print(f"Saved to: {features_repo.path}")
 
 
 if __name__ == "__main__":

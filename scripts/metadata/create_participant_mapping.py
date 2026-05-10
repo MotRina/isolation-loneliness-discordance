@@ -1,37 +1,24 @@
 import json
-import pandas as pd
 
-from src.infrastructure.database.connection import create_db_engine
+from src.infrastructure.database import DeviceRepository
+from src.infrastructure.storage import ParticipantMappingRepository
 
-engine = create_db_engine()
 
-query = """
-SELECT
-    device_id,
-    data
-FROM aware_device
-"""
+def main():
+    device_repo = DeviceRepository()
+    mapping_repo = ParticipantMappingRepository()
 
-df = pd.read_sql(query, engine)
+    df = device_repo.fetch_all()
 
-# JSON展開
-df["parsed"] = df["data"].apply(json.loads)
+    df["parsed"] = df["data"].apply(json.loads)
+    df["participant_id"] = df["parsed"].apply(lambda x: x.get("label"))
 
-# participant_id抽出
-df["participant_id"] = df["parsed"].apply(
-    lambda x: x.get("label")
-)
+    mapping_df = df[["participant_id", "device_id"]].drop_duplicates()
 
-# 必要列だけ
-mapping_df = df[["participant_id", "device_id"]]
+    print(mapping_df)
 
-# 重複除去
-mapping_df = mapping_df.drop_duplicates()
+    mapping_repo.save(mapping_df)
 
-print(mapping_df)
 
-# 保存
-mapping_df.to_csv(
-    "data/metadata/participant_mapping.csv",
-    index=False
-)
+if __name__ == "__main__":
+    main()

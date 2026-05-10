@@ -1,43 +1,22 @@
-# scripts/create_sensing_periods.py
-
-import json
-from pathlib import Path
-
 import pandas as pd
 
-from src.infrastructure.database.connection import create_db_engine
-
-
-MAPPING_PATH = "data/metadata/participant_mapping.csv"
-OUTPUT_PATH = "data/metadata/participant_sensing_periods.csv"
-
-
-def fetch_location_logs(engine, device_id: str):
-
-    query = """
-    SELECT
-        timestamp
-    FROM locations
-    WHERE device_id = %(device_id)s
-    """
-
-    return pd.read_sql(
-        query,
-        engine,
-        params={"device_id": device_id}
-    )
+from src.infrastructure.database import LocationRepository
+from src.infrastructure.storage import (
+    ParticipantMappingRepository,
+    ParticipantSensingPeriodsRepository,
+)
 
 
 def main():
+    location_repo = LocationRepository()
+    mapping_repo = ParticipantMappingRepository()
+    periods_repo = ParticipantSensingPeriodsRepository()
 
-    engine = create_db_engine()
-
-    mapping_df = pd.read_csv(MAPPING_PATH)
+    mapping_df = mapping_repo.load()
 
     rows = []
 
     for _, row in mapping_df.iterrows():
-
         participant_id = row["participant_id"]
         device_id = row["device_id"]
 
@@ -46,13 +25,9 @@ def main():
 
         print(f"Processing {participant_id}...")
 
-        location_df = fetch_location_logs(
-            engine,
-            device_id
-        )
+        location_df = location_repo.fetch_timestamps_by_device(device_id)
 
         if location_df.empty:
-
             rows.append({
                 "participant_id": participant_id,
                 "device_id": device_id,
@@ -60,22 +35,18 @@ def main():
                 "end_datetime": None,
                 "active_days": 0,
             })
-
             continue
 
         location_df["datetime"] = pd.to_datetime(
             location_df["timestamp"],
             unit="ms",
-            errors="coerce"
+            errors="coerce",
         )
 
         start_datetime = location_df["datetime"].min()
         end_datetime = location_df["datetime"].max()
 
-        active_days = (
-            end_datetime.date()
-            - start_datetime.date()
-        ).days + 1
+        active_days = (end_datetime.date() - start_datetime.date()).days + 1
 
         rows.append({
             "participant_id": participant_id,
@@ -87,19 +58,10 @@ def main():
 
     result_df = pd.DataFrame(rows)
 
-    Path(OUTPUT_PATH).parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    result_df.to_csv(
-        OUTPUT_PATH,
-        index=False
-    )
+    periods_repo.save(result_df)
 
     print(result_df)
-
-    print(f"Saved to: {OUTPUT_PATH}")
+    print(f"Saved to: {periods_repo.path}")
 
 
 if __name__ == "__main__":

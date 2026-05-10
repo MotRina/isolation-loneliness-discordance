@@ -1,17 +1,14 @@
-# scripts/features/location/create_phase_location_features.py
-
 import json
 import math
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from src.infrastructure.database.connection import create_db_engine
-
-
-PERIOD_PATH = "data/metadata/participant_phase_periods.csv"
-OUTPUT_PATH = "data/sensing/processed/phase_location_features.csv"
+from src.infrastructure.database import LocationRepository
+from src.infrastructure.storage import (
+    ParticipantPhasePeriodsRepository,
+    PhaseLocationFeaturesRepository,
+)
 
 
 def parse_location_json(data: str) -> dict:
@@ -66,41 +63,6 @@ def estimate_home_location(parsed_df: pd.DataFrame) -> tuple[float, float]:
     home_lon = night_df["longitude"].median()
 
     return home_lat, home_lon
-
-
-def fetch_location_logs_by_period(
-    engine,
-    device_id: str,
-    start_datetime: str,
-    end_datetime: str,
-) -> pd.DataFrame:
-    """
-    指定した device_id について、指定期間内の location ログだけを取得する。
-    AWARE の timestamp は Unixミリ秒。
-    """
-    start_ms = int(pd.Timestamp(start_datetime).timestamp() * 1000)
-    end_ms = int(pd.Timestamp(end_datetime).timestamp() * 1000)
-
-    query = """
-    SELECT
-        timestamp,
-        data
-    FROM locations
-    WHERE device_id = %(device_id)s
-      AND timestamp >= %(start_ms)s
-      AND timestamp < %(end_ms)s
-    ORDER BY timestamp
-    """
-
-    return pd.read_sql(
-        query,
-        engine,
-        params={
-            "device_id": device_id,
-            "start_ms": start_ms,
-            "end_ms": end_ms,
-        },
-    )
 
 
 def empty_location_features() -> dict:
@@ -252,9 +214,11 @@ def create_location_features(location_df: pd.DataFrame) -> dict:
 
 
 def main():
-    engine = create_db_engine()
+    location_repo = LocationRepository()
+    periods_repo = ParticipantPhasePeriodsRepository()
+    features_repo = PhaseLocationFeaturesRepository()
 
-    period_df = pd.read_csv(PERIOD_PATH)
+    period_df = periods_repo.load()
 
     feature_rows = []
 
@@ -265,11 +229,13 @@ def main():
 
         print(f"Processing {participant_id} / {phase}...")
 
-        location_df = fetch_location_logs_by_period(
-            engine=engine,
+        start_ms = int(pd.Timestamp(row["start_datetime"]).timestamp() * 1000)
+        end_ms = int(pd.Timestamp(row["end_datetime"]).timestamp() * 1000)
+
+        location_df = location_repo.fetch_by_device_in_range(
             device_id=device_id,
-            start_datetime=row["start_datetime"],
-            end_datetime=row["end_datetime"],
+            start_ms=start_ms,
+            end_ms=end_ms,
         )
 
         features = create_location_features(location_df)
@@ -285,18 +251,10 @@ def main():
 
     feature_df = pd.DataFrame(feature_rows)
 
-    Path(OUTPUT_PATH).parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    feature_df.to_csv(
-        OUTPUT_PATH,
-        index=False,
-    )
+    features_repo.save(feature_df)
 
     print(feature_df)
-    print(f"Saved to: {OUTPUT_PATH}")
+    print(f"Saved to: {features_repo.path}")
 
 
 if __name__ == "__main__":

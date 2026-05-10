@@ -1,80 +1,47 @@
-import pandas as pd
-
-
-QUESTIONNAIRE_PATH = (
-    "data/questionnaire/processed/questionnaire_master.csv"
-)
-
-PSYCHOLOGY_PATH = (
-    "data/questionnaire/processed/psychology_master.csv"
-)
-
-LOCATION_PATH = (
-    "data/sensing/processed/phase_location_features.csv"
-)
-
-OUTPUT_PATH = (
-    "data/analysis/analysis_master.csv"
+from src.infrastructure.storage import (
+    AnalysisMasterRepository,
+    PhaseLocationFeaturesRepository,
+    PsychologyMasterRepository,
+    QuestionnaireMasterRepository,
 )
 
 
-# =========================
-# load
-# =========================
+def main():
+    questionnaire_repo = QuestionnaireMasterRepository()
+    psychology_repo = PsychologyMasterRepository()
+    location_repo = PhaseLocationFeaturesRepository()
+    master_repo = AnalysisMasterRepository()
 
-questionnaire_df = pd.read_csv(
-    QUESTIONNAIRE_PATH
-)
+    questionnaire_df = questionnaire_repo.load()
+    psychology_df = psychology_repo.load()
+    location_df = location_repo.load()
 
-psychology_df = pd.read_csv(
-    PSYCHOLOGY_PATH
-)
+    # phase名を合わせる
+    location_df["phase"] = location_df["phase"].replace({
+        "pre_to_during": "pre",
+        "during_to_post": "post",
+    })
+    location_df = location_df[location_df["phase"] != "full_experiment"]
 
-location_df = pd.read_csv(
-    LOCATION_PATH
-)
+    # merge
+    master_df = questionnaire_df.merge(
+        psychology_df,
+        on=["participant_id", "phase"],
+        how="left",
+        suffixes=("", "_psych"),
+    )
+    master_df = master_df.merge(
+        location_df,
+        on=["participant_id", "phase"],
+        how="left",
+        suffixes=("", "_location"),
+    )
 
-# =========================
-# phase名を合わせる
-# =========================
+    master_repo.save(master_df)
 
-location_df["phase"] = location_df["phase"].replace({
-    "pre_to_during": "pre",
-    "during_to_post": "post",
-})
+    print(master_df.head())
+    print(f"Saved to: {master_repo.path}")
 
-# full_experiment除外
-location_df = location_df[
-    location_df["phase"] != "full_experiment"
-]
 
-# =========================
-# merge
-# =========================
-
-master_df = questionnaire_df.merge(
-    psychology_df,
-    on=["participant_id", "phase"],
-    how="left",
-    suffixes=("", "_psych")
-)
-
-master_df = master_df.merge(
-    location_df,
-    on=["participant_id", "phase"],
-    how="left",
-    suffixes=("", "_location")
-)
-
-# =========================
-# save
-# =========================
-
-master_df.to_csv(
-    OUTPUT_PATH,
-    index=False
-)
-
-print(master_df.head())
-
-print(f"Saved to: {OUTPUT_PATH}")
+if __name__ == "__main__":
+    main()

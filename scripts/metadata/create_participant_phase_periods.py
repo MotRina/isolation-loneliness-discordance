@@ -1,21 +1,24 @@
-# scripts/create_participant_phase_periods.py
-
 import pandas as pd
-from pathlib import Path
 
-QUESTIONNAIRE_PATH = "data/questionnaire/raw/questionnaire.csv"
-MAPPING_PATH = "data/metadata/participant_mapping.csv"
-OUTPUT_PATH = "data/metadata/participant_phase_periods.csv"
+from src.infrastructure.storage import (
+    ParticipantMappingRepository,
+    ParticipantPhasePeriodsRepository,
+    QuestionnaireRawRepository,
+)
 
 
 def main():
-    df = pd.read_csv(QUESTIONNAIRE_PATH, header=1)
+    raw_repo = QuestionnaireRawRepository()
+    mapping_repo = ParticipantMappingRepository()
+    periods_repo = ParticipantPhasePeriodsRepository()
+
+    df = raw_repo.load()
 
     # 不要行除去
     df = df[df["研究用ID"].notna()]
     df = df[df["研究用ID"] != "テスト"]
 
-    mapping_df = pd.read_csv(MAPPING_PATH)
+    mapping_df = mapping_repo.load()
     mapping_df = mapping_df[mapping_df["participant_id"] != "ojus"]
 
     # DBにある参加者だけ残す
@@ -72,11 +75,10 @@ def main():
 
     period_df = pd.DataFrame(rows)
 
-    Path(OUTPUT_PATH).parent.mkdir(parents=True, exist_ok=True)
-    period_df.to_csv(OUTPUT_PATH, index=False)
+    periods_repo.save(period_df)
 
     print(period_df)
-    print(f"Saved to: {OUTPUT_PATH}")
+    print(f"Saved to: {periods_repo.path}")
 
 
 if __name__ == "__main__":

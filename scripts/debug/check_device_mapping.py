@@ -1,17 +1,11 @@
-import pandas as pd
+from src.infrastructure.database import DeviceRepository
 
-from src.infrastructure.database.connection import create_db_engine
 
-engine = create_db_engine()
+def main():
+    repo = DeviceRepository()
+    df = repo.fetch_sample(limit=20)
+    print(df.to_string())
 
-query = """
-SELECT
-    device_id,
-    data
-FROM aware_device
-LIMIT 20
-"""
 
-df = pd.read_sql(query, engine)
-
-print(df.to_string())
+if __name__ == "__main__":
+    main()
