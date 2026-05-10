@@ -1,216 +1,14 @@
-import json
-import math
-
-import numpy as np
 import pandas as pd
 
+from src.domain.features.location import (
+    create_location_features,
+    parse_location_dataframe,
+)
 from src.infrastructure.database import LocationRepository
 from src.infrastructure.storage import (
     ParticipantPhasePeriodsRepository,
     PhaseLocationFeaturesRepository,
 )
-
-
-def parse_location_json(data: str) -> dict:
-    """
-    AWARE DB の locations.data(JSON文字列) を辞書に変換する。
-    """
-    try:
-        return json.loads(data)
-    except Exception:
-        return {}
-
-
-def haversine_km(lat1, lon1, lat2, lon2) -> float:
-    """
-    緯度経度から2地点間の距離をkmで計算する。
-    """
-    radius = 6371.0
-
-    lat1 = math.radians(lat1)
-    lon1 = math.radians(lon1)
-    lat2 = math.radians(lat2)
-    lon2 = math.radians(lon2)
-
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-
-    a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    )
-
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    return radius * c
-
-
-def estimate_home_location(parsed_df: pd.DataFrame) -> tuple[float, float]:
-    """
-    夜間によく観測される位置を home として推定する。
-    22時〜翌6時のGPS中央値を home とする。
-    夜間データがない場合は、全データの中央値を使う。
-    """
-    night_df = parsed_df[
-        (parsed_df["datetime"].dt.hour >= 22)
-        | (parsed_df["datetime"].dt.hour <= 6)
-    ]
-
-    if night_df.empty:
-        night_df = parsed_df
-
-    home_lat = night_df["latitude"].median()
-    home_lon = night_df["longitude"].median()
-
-    return home_lat, home_lon
-
-
-def empty_location_features() -> dict:
-    """
-    location データがない場合に返す空特徴量。
-    """
-    return {
-        "location_count": 0,
-        "active_days": 0,
-        "mean_accuracy": None,
-        "unique_location_bins": 0,
-        "location_count_per_day": None,
-        "unique_location_bins_per_day": None,
-        "home_latitude": None,
-        "home_longitude": None,
-        "home_stay_ratio": None,
-        "away_from_home_ratio": None,
-        "total_distance_km": None,
-        "total_distance_km_per_day": None,
-        "radius_of_gyration_km": None,
-    }
-
-
-def create_location_features(location_df: pd.DataFrame) -> dict:
-    """
-    locationログから phase 単位の特徴量を作成する。
-    """
-
-    if location_df.empty:
-        return empty_location_features()
-
-    parsed = location_df["data"].apply(parse_location_json)
-
-    parsed_df = pd.DataFrame({
-        "timestamp": location_df["timestamp"],
-        "latitude": parsed.apply(lambda x: x.get("double_latitude")),
-        "longitude": parsed.apply(lambda x: x.get("double_longitude")),
-        "accuracy": parsed.apply(lambda x: x.get("accuracy")),
-    })
-
-    parsed_df["datetime"] = pd.to_datetime(
-        parsed_df["timestamp"],
-        unit="ms",
-        errors="coerce",
-    )
-
-    parsed_df = parsed_df.dropna(
-        subset=["datetime", "latitude", "longitude"]
-    )
-
-    # 精度が悪すぎるGPS点を除外
-    parsed_df = parsed_df[
-        parsed_df["accuracy"].isna()
-        | (parsed_df["accuracy"] <= 50)
-    ]
-
-    if parsed_df.empty:
-        return empty_location_features()
-
-    parsed_df = parsed_df.sort_values("datetime")
-
-    parsed_df["date"] = parsed_df["datetime"].dt.date
-
-    parsed_df["location_bin"] = (
-        parsed_df["latitude"].round(3).astype(str)
-        + "_"
-        + parsed_df["longitude"].round(3).astype(str)
-    )
-
-    location_count = len(parsed_df)
-    active_days = parsed_df["date"].nunique()
-    unique_location_bins = parsed_df["location_bin"].nunique()
-
-    home_lat, home_lon = estimate_home_location(parsed_df)
-
-    parsed_df["distance_from_home_km"] = parsed_df.apply(
-        lambda row: haversine_km(
-            row["latitude"],
-            row["longitude"],
-            home_lat,
-            home_lon,
-        ),
-        axis=1,
-    )
-
-    # 200m以内を home とみなす
-    parsed_df["is_home"] = parsed_df["distance_from_home_km"] <= 0.2
-
-    home_stay_ratio = parsed_df["is_home"].mean()
-    away_from_home_ratio = 1 - home_stay_ratio
-
-    distances = []
-
-    previous_row = None
-
-    for _, row in parsed_df.iterrows():
-        if previous_row is not None:
-            distance_km = haversine_km(
-                previous_row["latitude"],
-                previous_row["longitude"],
-                row["latitude"],
-                row["longitude"],
-            )
-
-            distances.append(distance_km)
-
-        previous_row = row
-
-    total_distance_km = sum(distances)
-
-    center_lat = parsed_df["latitude"].mean()
-    center_lon = parsed_df["longitude"].mean()
-
-    distances_from_center = parsed_df.apply(
-        lambda row: haversine_km(
-            row["latitude"],
-            row["longitude"],
-            center_lat,
-            center_lon,
-        ),
-        axis=1,
-    )
-
-    radius_of_gyration_km = np.sqrt(
-        np.mean(distances_from_center ** 2)
-    )
-
-    return {
-        "location_count": location_count,
-        "active_days": active_days,
-        "mean_accuracy": parsed_df["accuracy"].mean(),
-        "unique_location_bins": unique_location_bins,
-        "location_count_per_day": (
-            location_count / active_days if active_days > 0 else None
-        ),
-        "unique_location_bins_per_day": (
-            unique_location_bins / active_days if active_days > 0 else None
-        ),
-        "home_latitude": home_lat,
-        "home_longitude": home_lon,
-        "home_stay_ratio": home_stay_ratio,
-        "away_from_home_ratio": away_from_home_ratio,
-        "total_distance_km": total_distance_km,
-        "total_distance_km_per_day": (
-            total_distance_km / active_days if active_days > 0 else None
-        ),
-        "radius_of_gyration_km": radius_of_gyration_km,
-    }
 
 
 def main():
@@ -232,13 +30,13 @@ def main():
         start_ms = int(pd.Timestamp(row["start_datetime"]).timestamp() * 1000)
         end_ms = int(pd.Timestamp(row["end_datetime"]).timestamp() * 1000)
 
-        location_df = location_repo.fetch_by_device_in_range(
+        raw_df = location_repo.fetch_by_device_in_range(
             device_id=device_id,
             start_ms=start_ms,
             end_ms=end_ms,
         )
-
-        features = create_location_features(location_df)
+        parsed_df = parse_location_dataframe(raw_df)
+        features = create_location_features(parsed_df)
 
         feature_rows.append({
             "participant_id": participant_id,
