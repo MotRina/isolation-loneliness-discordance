@@ -3,8 +3,10 @@ __pycache__/
 *.pyc
 
 # Virtual Environment
-venv/
+pip install -r requirements.txtenv/
 .env/
+.env
+*.env
 
 # Jupyter
 .ipynb_checkpoints/
