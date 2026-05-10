@@ -1,5 +1,12 @@
 import pandas as pd
 
+from src.domain.scoring import (
+    classify_discordance,
+    is_family_isolated,
+    is_friend_isolated,
+    is_isolated,
+)
+
 CSV_PATH = "data/questionnaire/raw/questionnaire.csv"
 OUTPUT_PATH = "data/questionnaire/processed/questionnaire_master.csv"
 
@@ -40,11 +47,11 @@ post_df = pd.DataFrame({
     "gender": df.iloc[:, 5],
     "marital_status": df.iloc[:, 6],
     "lsns_total": df.iloc[:, 34],
-    "lsns_isolated": (df.iloc[:, 34] < 12).astype(int),
+    "lsns_isolated": df.iloc[:, 34].map(is_isolated),
     "lsns_family": df.iloc[:, 35],
-    "lsns_family_isolated": (df.iloc[:, 35] < 6).astype(int),
+    "lsns_family_isolated": df.iloc[:, 35].map(is_family_isolated),
     "lsns_friend": df.iloc[:, 36],
-    "lsns_friend_isolated": (df.iloc[:, 36] < 6).astype(int),
+    "lsns_friend_isolated": df.iloc[:, 36].map(is_friend_isolated),
     "ucla_total": df.iloc[:, 37],
     "ucla_lonely": df.iloc[:, 38],
 })
@@ -54,12 +61,11 @@ questionnaire_df = questionnaire_df[questionnaire_df["participant_id"].notna()]
 
 questionnaire_df["discordance_type"] = questionnaire_df.apply(
     lambda row: (
-        "isolated_lonely" if row["lsns_isolated"] == 1 and row["ucla_lonely"] == 1
-        else "isolated_not_lonely" if row["lsns_isolated"] == 1 and row["ucla_lonely"] == 0
-        else "not_isolated_lonely" if row["lsns_isolated"] == 0 and row["ucla_lonely"] == 1
-        else "not_isolated_not_lonely"
+        result.value
+        if (result := classify_discordance(row["lsns_isolated"], row["ucla_lonely"])) is not None
+        else None
     ),
-    axis=1
+    axis=1,
 )
 
 questionnaire_df.to_csv(OUTPUT_PATH, index=False)

@@ -1,5 +1,7 @@
 import pandas as pd
 
+from src.domain.scoring import gad7_level_to_numeric
+
 CSV_PATH = "data/questionnaire/raw/questionnaire.csv"
 OUTPUT_PATH = "data/questionnaire/processed/psychology_master.csv"
 
@@ -173,16 +175,9 @@ psychology_df = psychology_df[
 # GAD level 数値化
 # =========================
 
-gad_map = {
-    "軽微": 0,
-    "軽度": 1,
-    "中等度": 2,
-    "重度": 3,
-}
-
 psychology_df["gad7_level_num"] = (
     psychology_df["gad7_level"]
-    .map(gad_map)
+    .map(gad7_level_to_numeric)
 )
 
 psychology_df.to_csv(
