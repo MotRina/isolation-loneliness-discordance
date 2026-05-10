@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 DATA_DIR = Path("data")
+RESULTS_DIR = Path("results")
 
 # Questionnaire
 QUESTIONNAIRE_RAW = DATA_DIR / "questionnaire" / "raw" / "questionnaire.csv"
@@ -19,7 +20,7 @@ LABEL_MASTER = DATA_DIR / "questionnaire" / "processed" / "label_master.csv"
 # Metadata
 PARTICIPANT_MAPPING = DATA_DIR / "metadata" / "participant_mapping.csv"
 PARTICIPANT_PHASE_PERIODS = DATA_DIR / "metadata" / "participant_phase_periods.csv"
-SENSING_PERIODS = DATA_DIR / "metadata" / "sensing_periods.csv"
+PARTICIPANT_SENSING_PERIODS = DATA_DIR / "metadata" / "participant_sensing_periods.csv"
 
 # Sensing features
 LOCATION_FEATURES = DATA_DIR / "sensing" / "processed" / "location_features.csv"
@@ -27,3 +28,7 @@ PHASE_LOCATION_FEATURES = DATA_DIR / "sensing" / "processed" / "phase_location_f
 
 # Analysis
 ANALYSIS_MASTER = DATA_DIR / "analysis" / "analysis_master.csv"
+
+# Plots
+PLOTS_DIR = RESULTS_DIR / "plots"
+DISCORDANCE_LOCATION_PLOT = PLOTS_DIR / "discordance_location_jp.png"

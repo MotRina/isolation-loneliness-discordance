@@ -17,7 +17,12 @@ def test_questionnaire_paths_under_questionnaire_dir():
 def test_metadata_paths_under_metadata_dir():
     assert paths.PARTICIPANT_MAPPING.parent == paths.DATA_DIR / "metadata"
     assert paths.PARTICIPANT_PHASE_PERIODS.parent == paths.DATA_DIR / "metadata"
-    assert paths.SENSING_PERIODS.parent == paths.DATA_DIR / "metadata"
+    assert paths.PARTICIPANT_SENSING_PERIODS.parent == paths.DATA_DIR / "metadata"
+
+
+def test_plot_paths_under_results_dir():
+    assert paths.PLOTS_DIR == paths.RESULTS_DIR / "plots"
+    assert paths.DISCORDANCE_LOCATION_PLOT.parent == paths.PLOTS_DIR
 
 
 def test_sensing_paths_under_sensing_dir():
