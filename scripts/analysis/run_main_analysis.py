@@ -9,41 +9,53 @@ from sklearn.linear_model import LinearRegression
 
 
 INPUT_PATH = "data/analysis/analysis_ready_master.csv"
-
 OUTPUT_DIR = Path("data/analysis/main_analysis")
-CROSS_SECTIONAL_PATH = OUTPUT_DIR / "cross_sectional_correlation.csv"
-PARTIAL_PATH = OUTPUT_DIR / "partial_correlation_age_gender.csv"
+
+CROSS_PATH = OUTPUT_DIR / "cross_sectional_correlation.csv"
+PARTIAL_PATH = OUTPUT_DIR / "partial_correlation.csv"
 GROUP_PATH = OUTPUT_DIR / "discordance_group_comparison.csv"
-DELTA_PATH = OUTPUT_DIR / "delta_analysis.csv"
+DELTA_PATH = OUTPUT_DIR / "delta_correlation.csv"
 
 
 SENSOR_FEATURES = [
-    # GPS
     "home_stay_ratio",
     "radius_of_gyration_km",
     "unique_location_bins_per_day",
-
-    # Bluetooth
+    "home_wifi_ratio",
+    "night_home_wifi_ratio",
+    "wifi_entropy",
+    "wifi_network_ratio",
+    "mobile_network_ratio",
     "unique_possible_social_devices_per_day",
-    "possible_social_device_count_per_day",
     "repeated_device_ratio",
     "night_bluetooth_ratio",
-
-    # Activity
     "stationary_ratio",
-    "walking_ratio",
-    "automotive_ratio",
     "active_movement_ratio",
     "outdoor_mobility_ratio",
-
-    # Home context
-    "home_context_score",
+    "screen_on_per_day",
+    "night_screen_ratio",
+    "mean_battery_level",
+    "low_battery_ratio",
+    "night_charge_ratio",
+    "bad_weather_ratio",
+    "mean_temperature",
 ]
 
 TARGETS = [
     "ucla_total",
     "lsns_total",
 ]
+
+
+def iqr(series):
+    return series.quantile(0.75) - series.quantile(0.25)
+
+
+def epsilon_squared(h_stat, n, k):
+    if n <= k:
+        return np.nan
+
+    return (h_stat - k + 1) / (n - k)
 
 
 def partial_spearman(df, x_col, y_col, control_cols):
@@ -55,6 +67,7 @@ def partial_spearman(df, x_col, y_col, control_cols):
     rank_df = valid_df[[x_col, y_col, *control_cols]].rank()
 
     x = rank_df[control_cols]
+
     x_model = LinearRegression().fit(x, rank_df[x_col])
     y_model = LinearRegression().fit(x, rank_df[y_col])
 
@@ -69,22 +82,24 @@ def partial_spearman(df, x_col, y_col, control_cols):
 def run_cross_sectional(df):
     rows = []
 
-    pre_df = df[
+    use_df = df[
         (df["phase"] == "pre")
         & (df["is_analysis_ready_basic"] == True)
     ].copy()
 
     for feature in SENSOR_FEATURES:
-        for target in TARGETS:
-            valid_df = pre_df.dropna(subset=[feature, target]).copy()
+        if feature not in use_df.columns:
+            continue
 
-            if len(valid_df) >= 3:
+        for target in TARGETS:
+            valid_df = use_df.dropna(subset=[feature, target]).copy()
+
+            if len(valid_df) >= 3 and valid_df[feature].nunique() > 1:
                 r, p = spearmanr(valid_df[feature], valid_df[target])
             else:
                 r, p = np.nan, np.nan
 
             rows.append({
-                "analysis": "cross_sectional_pre_basic",
                 "feature": feature,
                 "target": target,
                 "n": len(valid_df),
@@ -95,32 +110,31 @@ def run_cross_sectional(df):
     return pd.DataFrame(rows)
 
 
-def run_partial_correlation(df):
+def run_partial(df):
     rows = []
 
-    pre_df = df[
+    use_df = df[
         (df["phase"] == "pre")
         & (df["is_analysis_ready_basic"] == True)
     ].copy()
 
-    pre_df["gender_male"] = (pre_df["gender"] == "男性").astype(int)
+    use_df["gender_male"] = (use_df["gender"] == "男性").astype(int)
 
-    control_cols = [
-        "age",
-        "gender_male",
-    ]
+    control_cols = ["age", "gender_male"]
 
     for feature in SENSOR_FEATURES:
+        if feature not in use_df.columns:
+            continue
+
         for target in TARGETS:
             n, r, p = partial_spearman(
-                pre_df,
+                use_df,
                 feature,
                 target,
                 control_cols,
             )
 
             rows.append({
-                "analysis": "partial_correlation_pre_basic",
                 "feature": feature,
                 "target": target,
                 "control": "age + gender",
@@ -135,28 +149,36 @@ def run_partial_correlation(df):
 def run_group_comparison(df):
     rows = []
 
-    pre_df = df[
+    use_df = df[
         (df["phase"] == "pre")
         & (df["is_analysis_ready_basic"] == True)
     ].copy()
 
     for feature in SENSOR_FEATURES:
-        valid_df = pre_df.dropna(
+        if feature not in use_df.columns:
+            continue
+
+        valid_df = use_df.dropna(
             subset=[feature, "discordance_type"]
         ).copy()
 
-        group_values = [
-            group_df[feature].dropna()
-            for _, group_df in valid_df.groupby("discordance_type")
-            if len(group_df[feature].dropna()) > 0
+        groups = [
+            g[feature].dropna()
+            for _, g in valid_df.groupby("discordance_type")
+            if len(g[feature].dropna()) > 0
         ]
 
-        if len(group_values) >= 2:
-            h, p = kruskal(*group_values)
+        if len(groups) >= 2:
+            h, p = kruskal(*groups)
+            effect_size = epsilon_squared(
+                h,
+                n=len(valid_df),
+                k=len(groups),
+            )
         else:
-            h, p = np.nan, np.nan
+            h, p, effect_size = np.nan, np.nan, np.nan
 
-        summary_df = (
+        summary = (
             valid_df
             .groupby("discordance_type")[feature]
             .agg(
@@ -164,13 +186,14 @@ def run_group_comparison(df):
                 mean="mean",
                 median="median",
                 std="std",
+                iqr=iqr,
                 min="min",
                 max="max",
             )
             .reset_index()
         )
 
-        for _, row in summary_df.iterrows():
+        for _, row in summary.iterrows():
             rows.append({
                 "feature": feature,
                 "discordance_type": row["discordance_type"],
@@ -178,26 +201,24 @@ def run_group_comparison(df):
                 "mean": row["mean"],
                 "median": row["median"],
                 "std": row["std"],
+                "iqr": row["iqr"],
                 "min": row["min"],
                 "max": row["max"],
                 "kruskal_h": h,
                 "kruskal_p": p,
+                "epsilon_squared": effect_size,
             })
 
     return pd.DataFrame(rows)
 
 
-def run_delta_analysis(df):
-    use_df = df[
-        df["phase"].isin(["pre", "post"])
-    ].copy()
+def run_delta(df):
+    use_df = df[df["phase"].isin(["pre", "post"])].copy()
 
     value_cols = [
         "ucla_total",
         "lsns_total",
-        *SENSOR_FEATURES,
-        "is_analysis_ready_basic",
-        "is_analysis_ready_full",
+        *[c for c in SENSOR_FEATURES if c in use_df.columns],
     ]
 
     wide_df = use_df.pivot(
@@ -226,37 +247,36 @@ def run_delta_analysis(df):
     for feature in SENSOR_FEATURES:
         pre_col = f"{feature}_pre"
         post_col = f"{feature}_post"
-        delta_col = f"delta_{feature}"
 
         if pre_col not in wide_df.columns or post_col not in wide_df.columns:
             continue
 
+        delta_col = f"delta_{feature}"
+
         wide_df[delta_col] = wide_df[post_col] - wide_df[pre_col]
 
-        valid_df = wide_df.dropna(
-            subset=[delta_col, "delta_ucla_total"]
-        ).copy()
+        for target in ["delta_ucla_total", "delta_lsns_total"]:
+            valid_df = wide_df.dropna(subset=[delta_col, target]).copy()
 
-        if len(valid_df) >= 3:
-            r, p = spearmanr(
-                valid_df[delta_col],
-                valid_df["delta_ucla_total"],
-            )
-        else:
-            r, p = np.nan, np.nan
+            if len(valid_df) >= 3 and valid_df[delta_col].nunique() > 1:
+                r, p = spearmanr(valid_df[delta_col], valid_df[target])
+            else:
+                r, p = np.nan, np.nan
 
-        rows.append({
-            "feature": feature,
-            "delta_feature": delta_col,
-            "target": "delta_ucla_total",
-            "n": len(valid_df),
-            "spearman_r": r,
-            "spearman_p": p,
-        })
+            rows.append({
+                "delta_feature": delta_col,
+                "target": target,
+                "n": len(valid_df),
+                "spearman_r": r,
+                "spearman_p": p,
+            })
 
-    delta_corr_df = pd.DataFrame(rows)
+    wide_df.to_csv(
+        OUTPUT_DIR / "delta_wide_dataset.csv",
+        index=False,
+    )
 
-    return wide_df, delta_corr_df
+    return pd.DataFrame(rows)
 
 
 def main():
@@ -265,31 +285,26 @@ def main():
     df = pd.read_csv(INPUT_PATH)
 
     cross_df = run_cross_sectional(df)
-    partial_df = run_partial_correlation(df)
+    partial_df = run_partial(df)
     group_df = run_group_comparison(df)
-    delta_wide_df, delta_corr_df = run_delta_analysis(df)
+    delta_df = run_delta(df)
 
-    cross_df.to_csv(CROSS_SECTIONAL_PATH, index=False)
+    cross_df.to_csv(CROSS_PATH, index=False)
     partial_df.to_csv(PARTIAL_PATH, index=False)
     group_df.to_csv(GROUP_PATH, index=False)
-    delta_corr_df.to_csv(DELTA_PATH, index=False)
+    delta_df.to_csv(DELTA_PATH, index=False)
 
-    delta_wide_df.to_csv(
-        OUTPUT_DIR / "delta_wide_dataset.csv",
-        index=False,
-    )
+    print("\n=== Cross-sectional top ===")
+    print(cross_df.sort_values("spearman_p").head(20))
 
-    print("\n=== Cross-sectional ===")
-    print(cross_df)
+    print("\n=== Partial top ===")
+    print(partial_df.sort_values("partial_spearman_p").head(20))
 
-    print("\n=== Partial correlation ===")
-    print(partial_df)
+    print("\n=== Group comparison top ===")
+    print(group_df.sort_values("kruskal_p").head(20))
 
-    print("\n=== Group comparison ===")
-    print(group_df)
-
-    print("\n=== Delta analysis ===")
-    print(delta_corr_df)
+    print("\n=== Delta top ===")
+    print(delta_df.sort_values("spearman_p").head(20))
 
     print(f"\nSaved outputs to: {OUTPUT_DIR}")
 
