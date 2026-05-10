@@ -18,6 +18,8 @@ OPTIONAL_FEATURE_FILES = {
     "activity": "data/sensing/processed/phase_activity_features.csv",
     "network": "data/sensing/processed/phase_network_features.csv",
     "wifi": "data/sensing/processed/phase_wifi_features.csv",
+    "battery": "data/sensing/processed/phase_battery_features.csv",
+    "weather": "data/sensing/processed/phase_weather_features.csv",
     "notification": "data/sensing/processed/phase_notification_features.csv",
 }
 
