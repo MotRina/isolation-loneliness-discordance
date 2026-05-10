@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 
 # Virtual Environment
-pip install -r requirements.txtenv/
+env/
 .env/
 .env
 *.env
