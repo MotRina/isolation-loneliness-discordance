@@ -7,3 +7,4 @@ japanize-matplotlib
 seaborn
 statsmodels
 scikit-learn
+openai
